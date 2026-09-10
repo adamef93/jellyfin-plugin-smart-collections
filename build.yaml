@@ -2,7 +2,7 @@
 name: "jellyfin-plugin-smart-collections"
 guid: "bc4aad2e-d3d0-4725-a5e2-fd07949e5b42"
 version: "5" # Please increment with each pull request
-jellyfin_version: "10.5.0" # The earliest binary-compatible version
+jellyfin_version: "12.0.0.0" # The earliest binary-compatible version; single source of truth for manifest targetAbi
 owner: "jellyfin"
 nicename: "Smart Collections"
 description: "Automatically create Smart Collections based on Tags"

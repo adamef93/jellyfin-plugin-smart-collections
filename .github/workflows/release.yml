@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "manifest.json"
+      - "**.md"
 
 permissions:
   contents: write
@@ -96,33 +99,24 @@ jobs:
         CHECKSUM=$(md5sum jellyfin-plugin-smart-collections-${VERSION}.zip | awk '{ print $1 }')
         echo "CHECKSUM=$CHECKSUM" >> $GITHUB_OUTPUT
 
-    - name: Generate manifest.json
+    - name: Update manifest.json
       run: |
         VERSION=${{ steps.get_version.outputs.VERSION }}
         CHECKSUM=${{ steps.calculate_checksum.outputs.CHECKSUM }}
-        TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        cat > manifest.json << EOF
-        [
-          {
-            "guid": "09612e52-0f93-41ab-a6ab-5a19479f5315",
-            "name": "Smart Collections",
-            "overview": "Enables creation of Smart Collections based on Tag",
-            "description": "Enables creation of Smart Collections based on Tag",
-            "owner": "johnpc",
-            "category": "General",
-            "versions": [
-              {
-                "version": "${VERSION}",
-                "changelog": "See the full changelog at [GitHub](https://github.com/johnpc/jellyfin-plugin-smart-collections/releases/tag/${VERSION})",
-                "targetAbi": "12.0.0.0",
-                "sourceUrl": "https://github.com/johnpc/jellyfin-plugin-smart-collections/releases/download/${VERSION}/jellyfin-plugin-smart-collections-${VERSION}.zip",
-                "checksum": "${CHECKSUM}",
-                "timestamp": "${TIMESTAMP}"
-              }
-            ]
-          }
-        ]
-        EOF
+        # manifest.json from the checkout (git) is the source of truth; the
+        # script prepends the new entry and never rewrites historical ones.
+        python3 scripts/update-manifest.py \
+          --version "${VERSION}" \
+          --checksum "${CHECKSUM}" \
+          --source-url "https://github.com/${{ github.repository }}/releases/download/${VERSION}/jellyfin-plugin-smart-collections-${VERSION}.zip" \
+          --changelog "https://github.com/${{ github.repository }}/releases/tag/${VERSION}"
+
+    - name: Validate manifest.json
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        python3 scripts/validate-manifest.py \
+          --new-version "${VERSION}" \
+          --zip "jellyfin-plugin-smart-collections-${VERSION}.zip"
 
     - name: Create tag and GitHub Release
       run: |
@@ -146,10 +140,31 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Verify published release asset matches manifest
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        SOURCE_URL=$(python3 -c "import json,sys; m=json.load(open('manifest.json')); e=[v for v in m[0]['versions'] if v['version']=='${VERSION}'][0]; print(e['sourceUrl'])")
+        EXPECTED=$(python3 -c "import json,sys; m=json.load(open('manifest.json')); e=[v for v in m[0]['versions'] if v['version']=='${VERSION}'][0]; print(e['checksum'])")
+        echo "Downloading published asset: ${SOURCE_URL}"
+        for attempt in 1 2 3 4 5; do
+          if curl -fsSL "${SOURCE_URL}" -o published-asset.zip; then
+            break
+          fi
+          echo "Attempt ${attempt} failed; retrying in 10s..."
+          sleep 10
+        done
+        ACTUAL=$(md5sum published-asset.zip | awk '{ print $1 }')
+        echo "Expected md5: ${EXPECTED}"
+        echo "Actual md5:   ${ACTUAL}"
+        if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+          echo "ERROR: published asset checksum does not match manifest entry"
+          exit 1
+        fi
+
     - name: Update manifest on main
       run: |
         git fetch origin main
         git checkout main
         git add manifest.json
-        git commit -m "chore: update manifest for ${{ steps.get_version.outputs.VERSION }}" || true
+        git diff --cached --quiet || git commit -m "chore: update manifest for ${{ steps.get_version.outputs.VERSION }}"
         git push origin main
