@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.SmartCollections.Configuration;
@@ -19,6 +20,11 @@ namespace Jellyfin.Plugin.SmartCollections.Tests
     /// <summary>
     /// Tests for <see cref="SmartCollectionSyncService"/>.
     /// </summary>
+    /// <remarks>
+    /// Shares the "BaseItemStaticState" collection with other tests that assign the
+    /// static <see cref="BaseItem.LibraryManager"/> property, so they never run in parallel.
+    /// </remarks>
+    [Collection("BaseItemStaticState")]
     public class SmartCollectionSyncServiceTests
     {
         private readonly ICollectionManager _collectionManager;
@@ -37,6 +43,10 @@ namespace Jellyfin.Plugin.SmartCollections.Tests
             _collectionImageService = Substitute.For<ICollectionImageService>();
             _configurationProvider = Substitute.For<IPluginConfigurationProvider>();
             _logger = Substitute.For<ILogger<SmartCollectionSyncService>>();
+            _logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+            // Folder.GetLinkedChildren resolves linked child ids through the static library manager.
+            BaseItem.LibraryManager = _libraryManager;
             _sut = new SmartCollectionSyncService(
                 _collectionManager,
                 _libraryManager,
@@ -518,6 +528,41 @@ namespace Jellyfin.Plugin.SmartCollections.Tests
             await _collectionManager.Received(1).AddToCollectionAsync(
                 boxSet.Id,
                 Arg.Is<IReadOnlyList<Guid>>(ids => ids.Count == 2));
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_ExistingCollectionWithStaleItem_RemovesStaleItem()
+        {
+            // Arrange
+            var pair = new TagTitlePair("action", "Action Movies");
+            _configurationProvider.GetTagTitlePairs().Returns(new List<TagTitlePair> { pair });
+
+            var wantedMovie = new Movie { Name = "Die Hard", Id = Guid.NewGuid() };
+            var staleMovie = new Movie { Name = "Old Yeller", Id = Guid.NewGuid() };
+            _libraryQueryService.GetMovies("action", null).Returns(new List<Movie> { wantedMovie });
+            _libraryQueryService.GetSeries("action", null).Returns(new List<Series>());
+
+            var boxSet = CreateBoxSet("Action Movies");
+            boxSet.LinkedChildren = new[] { new LinkedChild { ItemId = staleMovie.Id } };
+
+            // The by-name lookup finds the existing collection; the linked-child
+            // resolution (by item ids) returns the stale member.
+            _libraryManager.GetItemList(Arg.Is<InternalItemsQuery>(q => q.Name != null))
+                .Returns(new List<BaseItem> { boxSet });
+            _libraryManager.GetItemList(Arg.Is<InternalItemsQuery>(q => q.Name == null && q.ItemIds.Length > 0))
+                .Returns(new List<BaseItem> { staleMovie });
+
+            // Act
+            await _sut.ExecuteAsync();
+
+            // Assert
+            await _collectionManager.DidNotReceive().CreateCollectionAsync(Arg.Any<CollectionCreationOptions>());
+            await _collectionManager.Received(1).RemoveFromCollectionAsync(
+                boxSet.Id,
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(staleMovie.Id)));
+            await _collectionManager.Received(1).AddToCollectionAsync(
+                boxSet.Id,
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Contains(wantedMovie.Id)));
         }
 
         private static BoxSet CreateBoxSet(string name)

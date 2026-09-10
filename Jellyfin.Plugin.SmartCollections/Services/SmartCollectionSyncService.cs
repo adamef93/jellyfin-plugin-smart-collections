@@ -122,7 +122,11 @@ namespace Jellyfin.Plugin.SmartCollections.Services
 
             if (collection == null)
             {
-                _logger.LogInformation("{Name} not found, creating.", collectionName);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("{Name} not found, creating.", collectionName);
+                }
+
                 collection = await _collectionManager.CreateCollectionAsync(new CollectionCreationOptions
                 {
                     Name = collectionName,
@@ -246,7 +250,11 @@ namespace Jellyfin.Plugin.SmartCollections.Services
 
             if (toRemove.Length > 0)
             {
-                _logger.LogInformation("Removing {Count} items from {Collection}", toRemove.Length, collection.Name);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Removing {Count} items from {Collection}", toRemove.Length, collection.Name);
+                }
+
                 await _collectionManager.RemoveFromCollectionAsync(collection.Id, toRemove).ConfigureAwait(false);
             }
         }
@@ -261,7 +269,11 @@ namespace Jellyfin.Plugin.SmartCollections.Services
 
             if (toAdd.Length > 0)
             {
-                _logger.LogInformation("Adding {Count} items to {Collection}", toAdd.Length, collection.Name);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Adding {Count} items to {Collection}", toAdd.Length, collection.Name);
+                }
+
                 await _collectionManager.AddToCollectionAsync(collection.Id, toAdd).ConfigureAwait(false);
             }
         }

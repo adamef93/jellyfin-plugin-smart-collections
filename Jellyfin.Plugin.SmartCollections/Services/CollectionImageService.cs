@@ -85,10 +85,14 @@ namespace Jellyfin.Plugin.SmartCollections.Services
             }
 
             collection.SetImage(new ItemImageInfo { Path = imageInfo.Path, Type = ImageType.Primary }, 0);
-            _logger.LogInformation(
-                "Set image for collection {CollectionName} from person {PersonName}",
-                collection.Name,
-                person.Name);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    "Set image for collection {CollectionName} from person {PersonName}",
+                    collection.Name,
+                    person.Name);
+            }
+
             return true;
         }
 
@@ -121,10 +125,14 @@ namespace Jellyfin.Plugin.SmartCollections.Services
 
             var imageInfo = mediaItem.ImageInfos.First(i => i.Type == ImageType.Primary);
             collection.SetImage(new ItemImageInfo { Path = imageInfo.Path, Type = ImageType.Primary }, 0);
-            _logger.LogInformation(
-                "Set image for collection {CollectionName} from {ItemName}",
-                collection.Name,
-                mediaItem.Name);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    "Set image for collection {CollectionName} from {ItemName}",
+                    collection.Name,
+                    mediaItem.Name);
+            }
+
             return true;
         }
 
